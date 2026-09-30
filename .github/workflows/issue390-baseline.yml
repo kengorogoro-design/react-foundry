@@ -28,3 +28,5 @@ jobs:
           fi
           echo "BASELINE_NOT_REPRODUCED: exit code $code"
           exit 1
+
+# trigger baseline run
