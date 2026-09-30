@@ -1,0 +1,30 @@
+name: Issue 390 baseline reproduction
+
+on:
+  push:
+    branches:
+      - validation/390-baseline
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup repository
+        uses: ./.github/actions/setup
+        with:
+          node: 24
+      - name: Reproduce single-package Jest hang
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM 30s bash -lc 'cd components/anchor && npm test' > /tmp/anchor-test.log 2>&1
+          code=$?
+          cat /tmp/anchor-test.log
+          if [ "$code" -eq 124 ]; then
+            echo "BASELINE_REPRODUCED: tests did not let Jest exit within 30s"
+            exit 0
+          fi
+          echo "BASELINE_NOT_REPRODUCED: exit code $code"
+          exit 1
