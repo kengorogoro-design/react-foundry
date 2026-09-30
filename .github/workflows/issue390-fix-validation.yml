@@ -1,0 +1,108 @@
+name: Issue 390 fix validation
+
+on:
+  push:
+    branches:
+      - validation/390-fix
+
+jobs:
+  single-package:
+    name: Anchor exits naturally (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [ '22', '24', '26' ]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup repository
+        uses: ./.github/actions/setup
+        with:
+          node: ${{ matrix.node }}
+      - name: Verify MessageChannel compatibility and liveness
+        shell: bash
+        run: |
+          node <<'NODE'
+          'use strict';
+          const assert = require('node:assert/strict');
+          const { MessageChannel: NativeMessageChannel } = require('node:worker_threads');
+
+          require('./.jest/setupAfterEnv.cjs');
+
+          const channel = new global.MessageChannel();
+          assert(channel instanceof NativeMessageChannel);
+          assert.equal(channel.port1.hasRef(), false);
+          assert.equal(channel.port2.hasRef(), false);
+
+          channel.port1.onmessage = () => {};
+          assert.equal(channel.port1.hasRef(), false);
+
+          let timer;
+          const received = new Promise((resolve, reject) => {
+            timer = setTimeout(() => reject(new Error('MessageChannel delivery timed out')), 1000);
+            channel.port2.onmessage = ({ data }) => {
+              try {
+                assert.equal(data, 'ok');
+                assert.equal(channel.port2.hasRef(), false);
+                resolve();
+              } catch (error) {
+                reject(error);
+              }
+            };
+          });
+
+          channel.port1.postMessage('ok');
+          received.then(() => {
+            clearTimeout(timer);
+            channel.port1.close();
+            channel.port2.close();
+            console.log('MESSAGECHANNEL_COMPATIBILITY_PASS');
+          }).catch((error) => {
+            clearTimeout(timer);
+            channel.port1.close();
+            channel.port2.close();
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+      - name: Verify single-suite package exits naturally
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM 30s bash -lc 'cd components/anchor && npm test' > /tmp/anchor-test.log 2>&1
+          code=$?
+          cat /tmp/anchor-test.log
+          if [ "$code" -ne 0 ]; then
+            echo "ANCHOR_EXIT_FAILURE: exit code $code"
+            exit 1
+          fi
+          if grep -q "Jest did not exit one second after the test run has completed" /tmp/anchor-test.log; then
+            echo "ANCHOR_EXIT_WARNING_PRESENT"
+            exit 1
+          fi
+          echo "ANCHOR_EXIT_PASS"
+
+  root-regression:
+    name: Root Jest exits cleanly
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup repository
+        uses: ./.github/actions/setup
+        with:
+          node: 24
+      - name: Run root Jest and reject leaked-worker warning
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout --signal=TERM 300s npm test 2>&1 | tee /tmp/root-test.log
+          if grep -q "failed to exit gracefully" /tmp/root-test.log; then
+            echo "ROOT_JEST_LEAK_WARNING_PRESENT"
+            exit 1
+          fi
+          if grep -q "Jest did not exit one second after the test run has completed" /tmp/root-test.log; then
+            echo "ROOT_JEST_EXIT_WARNING_PRESENT"
+            exit 1
+          fi
+          echo "ROOT_JEST_EXIT_PASS"
