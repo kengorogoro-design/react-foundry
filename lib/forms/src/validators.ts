@@ -65,6 +65,24 @@ const isFullDate = (v: string): boolean => (
   /^\d{4}-\d{2}-\d{2}$/.test(v) && isDate(v)
 );
 
+const comparableDate = (
+  customMsg: string | undefined,
+  field: IFieldContext,
+  value: string,
+  compare: () => boolean,
+  comparisonMsg: string
+): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  if (!isFullDate(value)) {
+    return customMsg || `Enter a full ${prettyName(field)}`;
+  }
+
+  return rawValidator(customMsg, compare(), comparisonMsg);
+};
+
 const readyValidator = (f: ReadyValidatorFn, priority: number = 0): ReadyValidator =>
   Object.assign(f, { priority: priority });
 
@@ -201,33 +219,33 @@ export const fullDate = (msg?: string) => readyValidator(
 
 export const past = (msg?: string) => readyValidator(
   (field: IFieldContext) => (value: string) =>
-    validator(msg, value,
-              value && isBefore(value),
-              `${PrettyName(field)} must be in the past`),
+    comparableDate(msg, field, value,
+                   () => isBefore(value),
+                   `${PrettyName(field)} must be in the past`),
   30
 );
 
 export const future = (msg?: string) => readyValidator(
   (field: IFieldContext) => (value: string) =>
-    validator(msg, value,
-              value && isAfter(value),
-              `${PrettyName(field)} must be in the future`),
+    comparableDate(msg, field, value,
+                   () => isAfter(value),
+                   `${PrettyName(field)} must be in the future`),
   30
 );
 
 export const before = (date: string) => (msg?: string) => readyValidator(
   (field: IFieldContext) => (value: string) =>
-    validator(msg, value,
-              value && isBefore(value, date),
-              `${PrettyName(field)} must be before ${date}`),
+    comparableDate(msg, field, value,
+                   () => isBefore(value, date),
+                   `${PrettyName(field)} must be before ${date}`),
   20
 );
 
 export const after = (date: string) => (msg?: string) => readyValidator(
   (field: IFieldContext) => (value: string) =>
-    validator(msg, value,
-              value && isAfter(value, date),
-              `${PrettyName(field)} must be after ${date}`),
+    comparableDate(msg, field, value,
+                   () => isAfter(value, date),
+                   `${PrettyName(field)} must be after ${date}`),
   20
 );
 
